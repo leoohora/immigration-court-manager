@@ -43,7 +43,7 @@ def generate_toc(client_id):
 st.set_page_config(page_title="Immigration Court Manager", layout="centered")
 st.title("🗂️ Immigration Court Case Manager")
 
-st.sidebar.image("static/logo.png", use_column_width=True)
+st.sidebar.image("static/logo.png", use_container_width=True)
 
 menu = ["Login"]
 choice = st.sidebar.selectbox("Menu", menu)
