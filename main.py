@@ -1,101 +1,201 @@
 import streamlit as st
 import os
+import json
+import datetime
+from pathlib import Path
 
-# === Configuração da página ===
+# ============ CONFIGURAÇÕES DA PÁGINA ============
 st.set_page_config(
     page_title="Immigration Court Manager",
     page_icon="⚖️",
     layout="wide"
 )
 
-# === Sidebar com logo ===
-logo_path = "static/logo.png"
-if os.path.exists(logo_path):
-    st.sidebar.image(logo_path, use_container_width=True)
+# ============ CONFIGURAÇÃO DE USUÁRIOS ============
+# Em produção, ideal usar um banco de dados e senhas criptografadas
+USERS = {
+    "admin": {"password": "admin123", "role": "admin"},
+    "client1": {"password": "client123", "role": "client"},
+}
+
+# ============ CARREGAR DADOS DE CLIENTES ============
+DATA_FILE = "clients_data.json"
+
+if not os.path.exists(DATA_FILE):
+    with open(DATA_FILE, "w") as f:
+        json.dump({}, f)
+
+with open(DATA_FILE, "r") as f:
+    clients_data = json.load(f)
+
+# ============ FUNÇÕES AUXILIARES ============
+
+def save_data():
+    with open(DATA_FILE, "w") as f:
+        json.dump(clients_data, f, indent=4)
+
+
+def create_client_folder(client_name):
+    base_path = Path("uploads") / client_name
+    base_path.mkdir(parents=True, exist_ok=True)
+    return base_path
+
+
+def list_uploaded_files(client_name):
+    folder = Path("uploads") / client_name
+    if not folder.exists():
+        return []
+    return [f.name for f in folder.iterdir() if f.is_file()]
+
+
+def generate_table_of_contents(file_list):
+    toc = "TABLE OF CONTENTS\n\n"
+    for idx, filename in enumerate(file_list, start=1):
+        toc += f"{idx}. {filename}\n"
+    return toc
+
+
+def generate_motion(client_name, motion_type):
+    template_path = Path("templates") / f"{motion_type}.txt"
+    if not template_path.exists():
+        return "❌ Template não encontrado."
+
+    with open(template_path, "r", encoding="utf-8") as f:
+        template = f.read()
+
+    motion = template.replace("[CLIENT_NAME]", client_name)
+    motion = motion.replace("[TODAY_DATE]", datetime.date.today().strftime("%B %d, %Y"))
+
+    return motion
+
+
+# ============ INTERFACE ============
+
+# Sidebar com logo
+if os.path.exists("static/logo.png"):
+    st.sidebar.image("static/logo.png", use_container_width=True)
 else:
     st.sidebar.title("Immigration Court Manager")
 
 st.sidebar.markdown("---")
 
-# === Usuários e senhas (em produção, use banco e hash) ===
-users = {
-    "admin": "admin123",
-    "client": "client123"
-}
-
-# === Inicializar variáveis de sessão ===
+# Sessão
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
-if "user" not in st.session_state:
     st.session_state.user = None
-if "login_message" not in st.session_state:
-    st.session_state.login_message = ""
+    st.session_state.role = None
 
-# === Função para fazer logout ===
-def logout():
-    st.session_state.logged_in = False
-    st.session_state.user = None
-    st.session_state.login_message = ""
-
-# === Tela de login ===
+# ============ LOGIN ============
 if not st.session_state.logged_in:
     st.title("🔐 Login no Sistema")
 
     username = st.text_input("Usuário")
     password = st.text_input("Senha", type="password")
-    login_btn = st.button("Entrar")
+    login_button = st.button("Entrar")
 
-    if login_btn:
-        if username in users and users[username] == password:
+    if login_button:
+        user = USERS.get(username)
+        if user and user["password"] == password:
             st.session_state.logged_in = True
             st.session_state.user = username
-            st.session_state.login_message = f"✅ Bem-vindo, {username}!"
-            # Não usar st.experimental_rerun nem set_query_params
+            st.session_state.role = user["role"]
+            st.success(f"✅ Bem-vindo, {username}!")
         else:
             st.error("❌ Usuário ou senha inválidos.")
 
-    if st.session_state.login_message:
-        st.success(st.session_state.login_message)
-
-# === Tela principal (após login) ===
+# ============ LOGOUT ============
 else:
-    st.sidebar.subheader(f"👤 Usuário: {st.session_state.user}")
-    if st.sidebar.button("Sair"):
-        logout()
+    st.sidebar.subheader(f"👤 Usuário: {st.session_state.user.capitalize()}")
+    if st.sidebar.button("🚪 Sair"):
+        st.session_state.logged_in = False
+        st.session_state.user = None
+        st.session_state.role = None
         st.experimental_rerun()
 
-    # === Área ADMIN ===
-    if st.session_state.user == "admin":
+    # ============ DASHBOARD ADMIN ============
+    if st.session_state.role == "admin":
         st.title("⚖️ Painel de Administração")
 
-        st.subheader("📄 Gerenciamento de Casos")
-        st.info("Aqui você pode gerenciar os casos, criar Table of Contents, gerar Motions automáticas, etc.")
+        st.subheader("📋 Lista de Clientes")
+        client_list = list(clients_data.keys())
 
-        st.subheader("🗂️ Upload e Organização de Documentos")
-        st.info("Futuramente, integrar com email para ler arquivos de corte automaticamente.")
+        if client_list:
+            client_selected = st.selectbox("Selecione um cliente", client_list)
 
-        st.subheader("✍️ Geração de Motions Automáticas")
-        st.info("Use templates para criar documentos legais rapidamente.")
+            if client_selected:
+                st.subheader(f"📂 Gerenciando Cliente: {client_selected}")
 
-        st.subheader("🔐 Gerenciar Acesso de Clientes")
-        st.info("Futuramente: gerar link seguro de upload para clientes.")
+                # Upload de documentos
+                st.markdown("### 🔺 Upload de Documentos")
+                uploaded_files = st.file_uploader(
+                    "Selecione arquivos",
+                    accept_multiple_files=True
+                )
+                if uploaded_files:
+                    folder = create_client_folder(client_selected)
+                    for file in uploaded_files:
+                        file_path = folder / file.name
+                        with open(file_path, "wb") as f:
+                            f.write(file.getbuffer())
+                        st.success(f"✅ '{file.name}' enviado com sucesso.")
 
-    # === Área CLIENTE (upload somente) ===
+                # Listar arquivos
+                files = list_uploaded_files(client_selected)
+                st.markdown("### 📑 Arquivos do Cliente")
+                if files:
+                    for file in files:
+                        st.markdown(f"- {file}")
+                else:
+                    st.info("Nenhum arquivo enviado ainda.")
+
+                # Geração de TOC
+                st.markdown("### 🗂️ Gerar Table of Contents")
+                if st.button("Gerar TOC"):
+                    toc = generate_table_of_contents(files)
+                    st.text_area("📄 Table of Contents", toc, height=200)
+
+                # Geração de Motions
+                st.markdown("### ✍️ Gerar Motion")
+                motion_type = st.selectbox("Selecione o tipo de motion", ["motion_to_continue", "motion_to_change_venue"])
+                if st.button("Gerar Motion"):
+                    motion = generate_motion(client_selected, motion_type)
+                    st.text_area("📄 Motion", motion, height=300)
+
+        st.markdown("---")
+        st.subheader("➕ Adicionar Novo Cliente")
+        new_client = st.text_input("Nome do Cliente")
+        if st.button("Adicionar Cliente"):
+            if new_client and new_client not in clients_data:
+                clients_data[new_client] = {"created": str(datetime.date.today())}
+                save_data()
+                st.success(f"✅ Cliente '{new_client}' adicionado.")
+            else:
+                st.error("⚠️ Nome inválido ou cliente já existe.")
+
+    # ============ DASHBOARD CLIENTE ============
     else:
         st.title("📤 Área de Upload de Documentos")
         st.info("Envie seus documentos diretamente para seu advogado.")
 
-        upload_folder = "uploads"
-        os.makedirs(upload_folder, exist_ok=True)
+        client_name = st.session_state.user
+        folder = create_client_folder(client_name)
 
         uploaded_files = st.file_uploader(
-            "Selecione os arquivos para upload",
+            "Selecione arquivos para upload",
             accept_multiple_files=True
         )
-
         if uploaded_files:
             for file in uploaded_files:
-                file_path = os.path.join(upload_folder, file.name)
+                file_path = folder / file.name
                 with open(file_path, "wb") as f:
                     f.write(file.getbuffer())
-                st.success(f"✅ Arquivo '{file.name}' enviado com sucesso!")
+                st.success(f"✅ '{file.name}' enviado com sucesso.")
+
+        # Mostrar arquivos enviados
+        files = list_uploaded_files(client_name)
+        st.subheader("📑 Seus arquivos enviados")
+        if files:
+            for file in files:
+                st.markdown(f"- {file}")
+        else:
+            st.info("Nenhum arquivo enviado ainda.")
